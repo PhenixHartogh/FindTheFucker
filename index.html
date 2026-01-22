@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>Find the Rat - PS1 Emoji Horror 🐀</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+	<style>
+		body {
+			margin: 0;
+			font-family: monospace;
+			background: #110800;
+			overflow: hidden;
+			color: gold;
+		}
+
+		#screen {
+			position: absolute;
+			inset: 0;
+			overflow: hidden;
+			background: repeating-linear-gradient(
+				45deg,
+				#222 0 20px,
+				#110 20px 40px
+			);
+			z-index: 0;
+		}
+
+		#hud {
+			position: fixed;
+			top: 6px;
+			left: 6px;
+			font-size: 16px;
+			z-index: 1000;
+			color: gold;
+			display: none;
+		}
+
+		#rat {
+			position: absolute;
+			cursor: pointer;
+			z-index: 5;
+			transition: all 0.15s;
+		}
+
+		.chef {
+			position: absolute;
+			font-size: 42px;
+			z-index: 4;
+			transition: transform 0.2s;
+		}
+
+		.table {
+			position: absolute;
+			font-size: 120px;
+			opacity: 0.45;
+			filter: blur(1px);
+			z-index: 3;
+		}
+
+		.decor,
+		.food {
+			position: absolute;
+			font-size: 32px;
+			opacity: 0.9;
+			z-index: 2;
+			pointer-events: none;
+		}
+
+		.fire {
+			pointer-events: none;
+			position: absolute;
+			width: 50px;
+			height: 50px;
+			font-size: 48px;
+			z-index: 999;
+			animation: flicker 0.1s infinite;
+		}
+
+		.static-overlay {
+			position: absolute;
+			inset: 0;
+			background: repeating-linear-gradient(#fff0 0 1px, #fff2 1px 2px);
+			opacity: 0.1;
+			z-index: 10000;
+			pointer-events: none;
+			animation: staticShake .1s infinite;
+		}
+
+		.titleScreen {
+			position: absolute;
+			inset: 0;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			background: #000;
+			z-index: 20000;
+		}
+
+		button {
+			font-family: monospace;
+			font-size: 18px;
+			margin: 6px;
+			padding: 6px;
+			color: #0f0;
+			background: #000;
+			border: 2px solid #0f0;
+			cursor: pointer;
+		}
+
+		@keyframes flicker {
+			0% { transform: scale(1) rotate(0deg); }
+			25% { transform: scale(1.1) rotate(2deg); }
+			50% { transform: scale(0.9) rotate(-2deg); }
+			75% { transform: scale(1.05) rotate(1deg); }
+			100% { transform: scale(1) rotate(0deg); }
+		}
+
+		@keyframes staticShake {
+			0% { transform: translate(0); }
+			25% { transform: translate(-2px, 1px); }
+			50% { transform: translate(2px, -1px); }
+			75% { transform: translate(-1px, -2px); }
+			100% { transform: translate(0); }
+		}
+
+		.vhs {
+			animation: vhs .15s infinite;
+		}
+
+		@keyframes vhs {
+			0% { transform: translate(0); }
+			25% { transform: translate(-2px, 1px); }
+			50% { transform: translate(2px, -1px); }
+			75% { transform: translate(-1px, -2px); }
+		}
+
+		.shake {
+			animation: shake 0.15s;
+		}
+
+		@keyframes shake {
+			0% { transform: translate(0); }
+			25% { transform: translate(-12px, 8px); }
+			50% { transform: translate(12px, -8px); }
+			75% { transform: translate(-8px, -12px); }
+		}
+	</style>
+</head>
+
+<body>
+
+	<div class="titleScreen" id="titleScreen">
+		<h1>🎮 FIND THE RAT 🐀</h1>
+		<button id="startGameBtn">Start Game</button>
+		<button id="memoryCardBtn">Memory Card</button>
+	</div>
+
+	<div id="memoryCard" style="display:none;
+								position:absolute;
+								inset:0;
+								background:#000;
+								color:#0f0;
+								z-index:20001;
+								display:flex;
+								flex-direction:column;
+								align-items:center;
+								justify-content:center;">
+		<h2>PS1 Memory Card</h2>
+		<div id="mcContent"></div>
+		<button id="loadSave">Load Save</button>
+		<button id="saveGame">Save Game</button>
+		<button id="backToTitle">Back</button>
+	</div>
+
+	<div id="hud">
+		<div>Score: <span id="score">0</span></div>
+		<div>Level: <span id="level">1</span></div>
+	</div>
+
+	<div id="screen" class="vhs"></div>
+
+	<script>
+		const titleScreen = document.getElementById("titleScreen");
+		const memoryCardScreen = document.getElementById("memoryCard");
+		const mcContent = document.getElementById("mcContent");
+		const startBtn = document.getElementById("startGameBtn");
+		const memoryBtn = document.getElementById("memoryCardBtn");
+		const loadBtn = document.getElementById("loadSave");
+		const saveBtn = document.getElementById("saveGame");
+		const backBtn = document.getElementById("backToTitle");
+		const hud = document.getElementById("hud");
+		const scoreEl = document.getElementById("score");
+		const levelEl = document.getElementById("level");
+		const screen = document.getElementById("screen");
+
+		let rat, chefs = [], foods = [], flames = [], shards = [];
+		let level = 1;
+		let score = 0;
+		let fire = false;
+		let flash = false;
+		let music = { osc: null, gain: null, ctx: null };
+		let currentThemeIndex = 0;
+
+		const decorEmojis = ["🍽️","🍷","🧀","🍳","🥖","🍕","🍔","🍟","🥩","🍝","🥘","🍾","🥄","🔪","🍴","🕯️","🪴","📋","🥫","🍪","🍰"];
+		const foodEmojis = ["🍕","🍔","🍟","🍣","🍜","🥗","🍩","🍪","🧁"];
+		const fireEmojis = ["🔥","💥","💣"];
+
+		const restaurantThemes = Array.from({length:50},(_,i)=>({
+			floor: i%2===0 ? "🟫" : "⬛",
+			wall: i%3===0 ? "🟥" : "🟩",
+			mode: i%2===0 ? "candle" : "dark"
+		}));
+
+		startBtn.onclick = function(){
+			titleScreen.style.display = "none";
+			hud.style.display = "block";
+			initGame();
+		};
+
+		memoryBtn.onclick = function(){ showMemoryCard(); };
+
+		function showMemoryCard(){
+			memoryCardScreen.style.display = "flex";
+			mcContent.innerHTML = `High Score: ${localStorage.getItem("ratSaveScore")||0}<br>Saved Level: ${localStorage.getItem("ratSaveLevel")||1}`;
+		}
+
+		loadBtn.onclick = function(){
+			score = parseInt(localStorage.getItem("ratSaveScore"))||0;
+			level = parseInt(localStorage.getItem("ratSaveLevel"))||1;
+			updateHUD();
+			memoryCardScreen.style.display = "none";
+			titleScreen.style.display = "none";
+			hud.style.display = "block";
+			initGame();
+		};
+
+		saveBtn.onclick = function(){
+			localStorage.setItem("ratSaveScore",score);
+			localStorage.setItem("ratSaveLevel",level);
+			alert("Game Saved!");
+		};
+
+		backBtn.onclick = function(){ memoryCardScreen.style.display = "none"; };
+
+		function updateHUD(){ scoreEl.textContent = score; levelEl.textContent = level; }
+
+		function switchTheme(){
+			currentThemeIndex = level % restaurantThemes.length;
+			const theme = restaurantThemes[currentThemeIndex];
+			screen.innerHTML = "";
+			screen.style.background = `repeating-linear-gradient(45deg, ${theme.floor} 0 20px, ${theme.wall} 20px 40px)`;
+			if(theme.mode==='candle'){ screen.style.filter = "brightness(0.8) contrast(1.2)"; } 
+			else { screen.style.filter = "brightness(0.5) contrast(1)"; }
+
+			// Spawn everything
+			spawnTables();
+			spawnDecor(15);
+			spawnRat();
+			spawnChef(5);
+			spawnFood(10);
+		}
+
+		function spawnRat(){
+			if(rat) rat.remove();
+			rat = document.createElement("div");
+			rat.id = "rat";
+			rat.textContent = "🐀";
+			rat.style.fontSize = Math.max(10,36-level*2) + "px";
+			rat.style.left = (10 + Math.random()*80) + "%";
+			rat.style.top = (10 + Math.random()*70) + "%";
+			rat.onclick = ratFound;
+			screen.appendChild(rat);
+		}
+
+		function spawnChef(count=5){
+			for(let i=0;i<count;i++){
+				const c = document.createElement("div");
+				c.className = "chef";
+				c.textContent = Math.random()<0.2?"👿":"👨‍🍳";
+				c.x = Math.random()*window.innerWidth;
+				c.y = Math.random()*window.innerHeight;
+				c.vx = Math.random()*6-3;
+				c.vy = Math.random()*6-3;
+				screen.appendChild(c);
+				chefs.push(c);
+			}
+		}
+
+		function spawnDecor(count){
+			for(let i=0;i<count;i++){
+				const d = document.createElement("div");
+				d.className="decor";
+				d.textContent = decorEmojis[Math.floor(Math.random()*decorEmojis.length)];
+				d.style.left=Math.random()*95+"%";
+				d.style.top=Math.random()*90+"%";
+				screen.appendChild(d);
+			}
+		}
+
+		function spawnFood(count){
+			for(let i=0;i<count;i++){
+				const f = document.createElement("div");
+				f.className="food";
+				f.textContent = foodEmojis[Math.floor(Math.random()*foodEmojis.length)];
+				f.style.left=Math.random()*95+"%";
+				f.style.top=Math.random()*90+"%";
+				screen.appendChild(f);
+				foods.push(f);
+			}
+		}
+
+		function spawnTables(count=5){
+			for(let i=0;i<count;i++){
+				const t = document.createElement("div");
+				t.className="table";
+				t.textContent="🪑";
+				t.style.left=Math.random()*80+"%";
+				t.style.top=Math.random()*70+"%";
+				screen.appendChild(t);
+			}
+		}
+
+		function ratFound(){
+			score+=10;
+			level++;
+			updateHUD();
+			switchTheme();
+			if(level>=10) triggerFire();
+			if(level>=15) triggerFlashEnding();
+			updateMusic();
+		}
+
+		function moveChefs(){
+			chefs.forEach(c=>{
+				c.x+=c.vx;
+				c.y+=c.vy;
+				if(c.x<0||c.x>window.innerWidth-40)c.vx*=-1;
+				if(c.y<0||c.y>window.innerHeight-40)c.vy*=-1;
+				c.style.left=c.x+"px";
+				c.style.top=c.y+"px";
+			});
+		}
+
+		function triggerFire(){
+			if(fire) return;
+			fire=true;
+			for(let i=0;i<50;i++){
+				const f=document.createElement("div");
+				f.className="fire";
+				f.textContent=fireEmojis[Math.floor(Math.random()*fireEmojis.length)];
+				f.style.left=Math.random()*window.innerWidth+"px";
+				f.style.top=Math.random()*window.innerHeight+"px";
+				screen.appendChild(f);
+				flames.push(f);
+			}
+		}
+
+		function triggerFlashEnding(){
+			if(flash) return;
+			flash=true;
+			const overlay=document.createElement("div");
+			overlay.className="static-overlay";
+			screen.appendChild(overlay);
+		}
+
+		function gameLoop(){
+			moveChefs();
+			requestAnimationFrame(gameLoop);
+		}
+
+		function startMusic(){
+			music.ctx=new (window.AudioContext||window.webkitAudioContext)();
+			music.osc=music.ctx.createOscillator();
+			music.gain=music.ctx.createGain();
+			music.osc.type="square";
+			music.osc.frequency.value=60;
+			music.gain.gain.value=0.05;
+			music.osc.connect(music.gain);
+			music.gain.connect(music.ctx.destination);
+			music.osc.start();
+		}
+
+		function updateMusic(){
+			if(!music.osc) return;
+			if(level>=15||fire){ music.osc.frequency.linearRampToValueAtTime(200,music.ctx.currentTime+0.5); }
+			else if(level>=10){ music.osc.frequency.linearRampToValueAtTime(120,music.ctx.currentTime+0.5); }
+			else { music.osc.frequency.linearRampToValueAtTime(80,music.ctx.currentTime+0.5); }
+		}
+
+		function initGame(){
+			switchTheme();
+			startMusic();
+			gameLoop();
+		}
+	</script>
+</body>
+</html>
